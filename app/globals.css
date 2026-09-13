@@ -1,0 +1,46 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    @apply scroll-smooth;
+  }
+  body {
+    @apply bg-sand-100 text-harbor-950 font-body antialiased;
+  }
+  h1, h2, h3 {
+    @apply font-display;
+  }
+  :focus-visible {
+    outline: 2px solid theme("colors.coral.600");
+    outline-offset: 2px;
+  }
+}
+
+@layer components {
+  .card {
+    @apply bg-white border border-harbor-900/10 rounded-2xl shadow-sm;
+  }
+  .btn {
+    @apply inline-flex items-center justify-center rounded-xl px-4 py-2.5 text-sm font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-coral-600 text-white hover:bg-coral-500;
+  }
+  .btn-secondary {
+    @apply btn bg-harbor-900 text-white hover:bg-harbor-800;
+  }
+  .btn-outline {
+    @apply btn border border-harbor-900/20 text-harbor-900 hover:bg-harbor-900/5;
+  }
+  .field-input {
+    @apply w-full rounded-xl border border-harbor-900/15 bg-white px-3.5 py-2.5 text-sm text-harbor-950 placeholder:text-harbor-900/40 focus:border-lagoon-500 focus:ring-2 focus:ring-lagoon-300/50 outline-none transition;
+  }
+  .field-label {
+    @apply block text-sm font-medium text-harbor-900/80 mb-1.5;
+  }
+  .field-error {
+    @apply mt-1.5 text-sm text-status-cancelled;
+  }
+}
