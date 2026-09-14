@@ -4,6 +4,8 @@ import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/StatusBadge";
+import RideMap from "@/components/RideMap";
+import { useGeocode } from "@/lib/useGeocode";
 import type { Booking, BookingStatus } from "@/lib/types";
 
 const NEXT_ACTION: Partial<Record<BookingStatus, { label: string; next: BookingStatus }>> = {
@@ -136,59 +138,82 @@ export default function DriverDashboard() {
             No rides assigned right now. New assignments will appear here instantly.
           </div>
         ) : (
-          rides.map((ride) => {
-            const action = NEXT_ACTION[ride.status];
-            return (
-              <div key={ride.id} className="card p-5">
-                <div className="flex items-start justify-between mb-3">
-                  <div>
-                    <p className="font-semibold">{ride.customer_name}</p>
-                    <a href={`tel:${ride.customer_phone}`} className="text-sm text-lagoon-500 underline">
-                      {ride.customer_phone}
-                    </a>
-                  </div>
-                  <StatusBadge status={ride.status} />
-                </div>
-
-                <dl className="text-sm space-y-1.5 mb-4">
-                  <div className="flex gap-2">
-                    <dt className="text-harbor-900/50 w-24 shrink-0">Pickup</dt>
-                    <dd>{ride.pickup_location}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="text-harbor-900/50 w-24 shrink-0">Destination</dt>
-                    <dd>{ride.destination}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="text-harbor-900/50 w-24 shrink-0">Passengers</dt>
-                    <dd>{ride.passenger_count}</dd>
-                  </div>
-                  <div className="flex gap-2">
-                    <dt className="text-harbor-900/50 w-24 shrink-0">Pickup time</dt>
-                    <dd>{ride.pickup_date} · {ride.pickup_time}</dd>
-                  </div>
-                  {ride.notes && (
-                    <div className="flex gap-2">
-                      <dt className="text-harbor-900/50 w-24 shrink-0">Notes</dt>
-                      <dd>{ride.notes}</dd>
-                    </div>
-                  )}
-                </dl>
-
-                {action && (
-                  <button
-                    onClick={() => updateStatus(ride.id, action.next)}
-                    disabled={updating === ride.id}
-                    className="btn-primary w-full"
-                  >
-                    {updating === ride.id ? "Updating…" : action.label}
-                  </button>
-                )}
-              </div>
-            );
-          })
+          rides.map((ride) => <RideCard key={ride.id} ride={ride} updating={updating} onUpdateStatus={updateStatus} />)
         )}
       </div>
     </main>
+  );
+}
+
+function RideCard({
+  ride,
+  updating,
+  onUpdateStatus,
+}: {
+  ride: Booking;
+  updating: string | null;
+  onUpdateStatus: (bookingId: string, next: BookingStatus) => void;
+}) {
+  const action = NEXT_ACTION[ride.status];
+  const pickupGeo = useGeocode(ride.pickup_location);
+  const destinationGeo = useGeocode(ride.destination);
+
+  return (
+    <div className="card p-5">
+      <div className="flex items-start justify-between mb-3">
+        <div>
+          <p className="font-semibold">{ride.customer_name}</p>
+          <a href={`tel:${ride.customer_phone}`} className="text-sm text-lagoon-500 underline">
+            {ride.customer_phone}
+          </a>
+        </div>
+        <StatusBadge status={ride.status} />
+      </div>
+
+      <dl className="text-sm space-y-1.5 mb-4">
+        <div className="flex gap-2">
+          <dt className="text-harbor-900/50 w-24 shrink-0">Pickup</dt>
+          <dd>{ride.pickup_location}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="text-harbor-900/50 w-24 shrink-0">Destination</dt>
+          <dd>{ride.destination}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="text-harbor-900/50 w-24 shrink-0">Passengers</dt>
+          <dd>{ride.passenger_count}</dd>
+        </div>
+        <div className="flex gap-2">
+          <dt className="text-harbor-900/50 w-24 shrink-0">Pickup time</dt>
+          <dd>{ride.pickup_date} · {ride.pickup_time}</dd>
+        </div>
+        {ride.notes && (
+          <div className="flex gap-2">
+            <dt className="text-harbor-900/50 w-24 shrink-0">Notes</dt>
+            <dd>{ride.notes}</dd>
+          </div>
+        )}
+      </dl>
+
+      <div className="mb-4">
+        <RideMap
+          pickup={pickupGeo.coords}
+          pickupLabel={ride.pickup_location}
+          destination={destinationGeo.coords}
+          destinationLabel={ride.destination}
+          className="h-40"
+        />
+      </div>
+
+      {action && (
+        <button
+          onClick={() => onUpdateStatus(ride.id, action.next)}
+          disabled={updating === ride.id}
+          className="btn-primary w-full"
+        >
+          {updating === ride.id ? "Updating…" : action.label}
+        </button>
+      )}
+    </div>
   );
 }

@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
+import RideMap from "@/components/RideMap";
+import { useGeocode } from "@/lib/useGeocode";
 
 interface FormState {
   customer_name: string;
@@ -31,6 +33,9 @@ export default function BookingPage() {
   const [submitError, setSubmitError] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const [confirmedId, setConfirmedId] = useState<string | null>(null);
+
+  const pickupGeo = useGeocode(form.pickup_location);
+  const destinationGeo = useGeocode(form.destination);
 
   function update<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((f) => ({ ...f, [key]: value }));
@@ -157,6 +162,20 @@ export default function BookingPage() {
               required
             />
             {fieldErrors.destination && <p className="field-error">{fieldErrors.destination}</p>}
+          </div>
+
+          <div>
+            <p className="field-label mb-2">Route preview</p>
+            <RideMap
+              pickup={pickupGeo.coords}
+              pickupLabel={form.pickup_location}
+              destination={destinationGeo.coords}
+              destinationLabel={form.destination}
+              className="h-52"
+            />
+            {(pickupGeo.loading || destinationGeo.loading) && (
+              <p className="mt-1.5 text-xs text-harbor-900/40">Locating…</p>
+            )}
           </div>
 
           <div className="grid sm:grid-cols-3 gap-4">

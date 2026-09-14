@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { supabaseServer } from "@/lib/supabase/server";
+import { recordAudit } from "@/lib/audit";
 import { DRIVER_STATUS_FLOW, type BookingStatus } from "@/lib/types";
 
 const VALID_STATUSES: BookingStatus[] = [
@@ -66,6 +67,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   if (nextStatus === "COMPLETED" || nextStatus === "CANCELLED") {
     await supabaseServer.from("drivers").update({ status: "AVAILABLE" }).eq("id", session.driverId);
   }
+
+  await recordAudit({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: "booking.status_change",
+    entityType: "booking",
+    entityId: bookingId,
+    before: { status: booking.status },
+    after: { status: nextStatus },
+  });
 
   return NextResponse.json({ booking: updatedBooking });
 }

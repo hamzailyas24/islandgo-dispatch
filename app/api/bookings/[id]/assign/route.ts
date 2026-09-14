@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSession } from "@/lib/auth";
 import { supabaseServer } from "@/lib/supabase/server";
+import { recordAudit } from "@/lib/audit";
 
 export async function POST(req: NextRequest, { params }: { params: { id: string } }) {
   const session = await getSession();
@@ -58,6 +59,16 @@ export async function POST(req: NextRequest, { params }: { params: { id: string 
   }
 
   await supabaseServer.from("drivers").update({ status: "BUSY" }).eq("id", driver_id);
+
+  await recordAudit({
+    actorId: session.userId,
+    actorRole: session.role,
+    action: "booking.assign",
+    entityType: "booking",
+    entityId: bookingId,
+    before: { status: booking.status, driver_id: null },
+    after: { status: "ASSIGNED", driver_id },
+  });
 
   return NextResponse.json({ booking: updatedBooking });
 }

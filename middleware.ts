@@ -1,34 +1,56 @@
 import { NextRequest, NextResponse } from "next/server";
-import { verifySessionCookieValue, SESSION_COOKIE_NAME } from "@/lib/session";
+import { createServerClient, type CookieOptions } from "@supabase/ssr";
 
-// Middleware runs on the Edge runtime, so it verifies the signed cookie
-// using the Web-Crypto based helper in lib/session.ts (Node's `crypto`
-// module used by lib/auth.ts is not available on the Edge runtime).
-
+// Runs on the Edge runtime. Uses @supabase/ssr's cookie-based session so
+// the exact same Supabase Auth session set by /api/auth/login (Node
+// runtime) is readable here. Also refreshes the session cookie on every
+// request, which is required by @supabase/ssr for the session to stay
+// valid across requests.
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
   const isAdminRoute = pathname.startsWith("/admin");
   const isDriverRoute = pathname.startsWith("/driver");
 
-  if (!isAdminRoute && !isDriverRoute) return NextResponse.next();
+  let response = NextResponse.next({ request: req });
 
-  const raw = req.cookies.get(SESSION_COOKIE_NAME)?.value;
-  const session = await verifySessionCookieValue(raw);
+  const supabase = createServerClient(
+    process.env.NEXT_PUBLIC_SUPABASE_URL!,
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+    {
+      cookies: {
+        getAll() {
+          return req.cookies.getAll();
+        },
+        setAll(cookiesToSet: { name: string; value: string; options: CookieOptions }[]) {
+          cookiesToSet.forEach(({ name, value }) => req.cookies.set(name, value));
+          response = NextResponse.next({ request: req });
+          cookiesToSet.forEach(({ name, value, options }) => response.cookies.set(name, value, options));
+        },
+      },
+    }
+  );
 
-  if (!session) {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  if (!isAdminRoute && !isDriverRoute) return response;
+
+  if (!user) {
     const loginUrl = new URL("/login", req.url);
     loginUrl.searchParams.set("next", pathname);
     return NextResponse.redirect(loginUrl);
   }
 
-  if (isAdminRoute && session.role !== "admin") {
-    return NextResponse.redirect(new URL("/login", req.url));
-  }
-  if (isDriverRoute && session.role !== "driver") {
+  // Role check happens here too (not just in getSession() server-side) so
+  // an unauthorized role is redirected before the page even renders.
+  const { data: profile } = await supabase.from("profiles").select("role").eq("id", user.id).single();
+
+  if (!profile || (isAdminRoute && profile.role !== "admin") || (isDriverRoute && profile.role !== "driver")) {
     return NextResponse.redirect(new URL("/login", req.url));
   }
 
-  return NextResponse.next();
+  return response;
 }
 
 export const config = {

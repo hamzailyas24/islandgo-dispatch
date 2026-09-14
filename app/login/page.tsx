@@ -6,7 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 function LoginForm() {
   const router = useRouter();
   const params = useSearchParams();
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
@@ -19,7 +19,7 @@ function LoginForm() {
       const res = await fetch("/api/auth/login", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ username, password }),
+        body: JSON.stringify({ email, password }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -50,13 +50,14 @@ function LoginForm() {
 
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="field-label" htmlFor="username">Username</label>
+            <label className="field-label" htmlFor="email">Email</label>
             <input
-              id="username"
+              id="email"
+              type="email"
               className="field-input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              autoComplete="username"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              autoComplete="email"
               required
             />
           </div>
@@ -78,7 +79,7 @@ function LoginForm() {
         </form>
 
         <p className="mt-6 text-xs text-harbor-900/50">
-          Demo accounts — see the README for the seeded admin and driver credentials.
+          Contact an administrator if you don't have dispatch credentials yet.
         </p>
       </div>
     </main>

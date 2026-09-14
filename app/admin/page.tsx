@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { supabaseBrowser } from "@/lib/supabase/client";
 import { StatusBadge } from "@/components/StatusBadge";
+import RideMap from "@/components/RideMap";
+import { useGeocode } from "@/lib/useGeocode";
 import type { Booking, Driver } from "@/lib/types";
 
 export default function AdminDashboard() {
@@ -30,39 +32,115 @@ export default function AdminDashboard() {
     setLoading(false);
   }, []);
 
-  useEffect(() => {
-    loadData();
+ useEffect(() => {
+  loadData();
 
-    const channel = supabaseBrowser
-      .channel("admin-dashboard")
-      .on("postgres_changes", { event: "*", schema: "public", table: "bookings" }, (payload) => {
+  const channel = supabaseBrowser
+    .channel("admin-dashboard")
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "bookings",
+      },
+      (payload) => {
         setBookings((prev) => {
-          if (payload.eventType === "INSERT") {
-            return [payload.new as Booking, ...prev];
-          }
-          if (payload.eventType === "UPDATE") {
-            return prev.map((b) => (b.id === (payload.new as Booking).id ? (payload.new as Booking) : b));
-          }
-          if (payload.eventType === "DELETE") {
-            return prev.filter((b) => b.id !== (payload.old as Booking).id);
-          }
-          return prev;
-        });
-      })
-      .on("postgres_changes", { event: "*", schema: "public", table: "drivers" }, (payload) => {
-        setDrivers((prev) => {
-          if (payload.eventType === "UPDATE") {
-            return prev.map((d) => (d.id === (payload.new as Driver).id ? (payload.new as Driver) : d));
-          }
-          return prev;
-        });
-      })
-      .subscribe();
+          switch (payload.eventType) {
+            case "INSERT": {
+              const newBooking = payload.new as Booking;
 
-    return () => {
-      supabaseBrowser.removeChannel(channel);
-    };
-  }, [loadData]);
+              // Avoid duplicate booking if it already exists in local state
+              if (prev.some((booking) => booking.id === newBooking.id)) {
+                return prev.map((booking) =>
+                  booking.id === newBooking.id ? newBooking : booking
+                );
+              }
+
+              return [newBooking, ...prev];
+            }
+
+            case "UPDATE": {
+              const updatedBooking = payload.new as Booking;
+
+              // Update the booking in local state.
+              // The pending/active/history useMemo values will
+              // automatically recalculate from the new status.
+              return prev.map((booking) =>
+                booking.id === updatedBooking.id
+                  ? updatedBooking
+                  : booking
+              );
+            }
+
+            case "DELETE": {
+              const deletedBooking = payload.old as Partial<Booking>;
+
+              return prev.filter(
+                (booking) => booking.id !== deletedBooking.id
+              );
+            }
+
+            default:
+              return prev;
+          }
+        });
+      }
+    )
+    .on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "public",
+        table: "drivers",
+      },
+      (payload) => {
+        setDrivers((prev) => {
+          switch (payload.eventType) {
+            case "INSERT": {
+              const newDriver = payload.new as Driver;
+
+              if (prev.some((driver) => driver.id === newDriver.id)) {
+                return prev.map((driver) =>
+                  driver.id === newDriver.id ? newDriver : driver
+                );
+              }
+
+              return [...prev, newDriver].sort((a, b) =>
+                a.name.localeCompare(b.name)
+              );
+            }
+
+            case "UPDATE": {
+              const updatedDriver = payload.new as Driver;
+
+              return prev.map((driver) =>
+                driver.id === updatedDriver.id
+                  ? updatedDriver
+                  : driver
+              );
+            }
+
+            case "DELETE": {
+              const deletedDriver = payload.old as Partial<Driver>;
+
+              return prev.filter(
+                (driver) => driver.id !== deletedDriver.id
+              );
+            }
+
+            default:
+              return prev;
+          }
+        });
+      }
+    )
+    .subscribe();
+
+  return () => {
+    supabaseBrowser.removeChannel(channel);
+  };
+}, [loadData]);
 
   const pending = useMemo(() => bookings.filter((b) => b.status === "PENDING"), [bookings]);
   const active = useMemo(
@@ -226,30 +304,9 @@ export default function AdminDashboard() {
             <EmptyState text="No rides in progress. Assigned and en-route rides will show up here." />
           ) : (
             <div className="space-y-3">
-              {active.map((b) => {
-                const driver = b.driver_id ? driverById.get(b.driver_id) : null;
-                return (
-                  <div key={b.id} className="card p-4 sm:flex sm:items-center sm:justify-between gap-4">
-                    <div className="flex-1 grid sm:grid-cols-4 gap-3 text-sm">
-                      <div>
-                        <p className="font-medium">{b.customer_name}</p>
-                        <p className="text-harbor-900/50">{driver?.name ?? "Unassigned"}</p>
-                      </div>
-                      <div>
-                        <p className="text-harbor-900/50 text-xs">Pickup</p>
-                        <p>{b.pickup_location}</p>
-                      </div>
-                      <div>
-                        <p className="text-harbor-900/50 text-xs">Destination</p>
-                        <p>{b.destination}</p>
-                      </div>
-                      <div>
-                        <StatusBadge status={b.status} />
-                      </div>
-                    </div>
-                  </div>
-                );
-              })}
+              {active.map((b) => (
+                <ActiveRideRow key={b.id} booking={b} driverName={b.driver_id ? driverById.get(b.driver_id)?.name : undefined} />
+              ))}
             </div>
           )}
         </section>
@@ -286,6 +343,53 @@ function SkeletonRows() {
       {[0, 1].map((i) => (
         <div key={i} className="card p-4 h-16 animate-pulse bg-harbor-900/5" />
       ))}
+    </div>
+  );
+}
+
+function ActiveRideRow({ booking, driverName }: { booking: Booking; driverName?: string }) {
+  const [showMap, setShowMap] = useState(false);
+  const pickupGeo = useGeocode(showMap ? booking.pickup_location : "");
+  const destinationGeo = useGeocode(showMap ? booking.destination : "");
+
+  return (
+    <div className="card p-4">
+      <div className="sm:flex sm:items-center sm:justify-between gap-4">
+        <div className="flex-1 grid sm:grid-cols-4 gap-3 text-sm">
+          <div>
+            <p className="font-medium">{booking.customer_name}</p>
+            <p className="text-harbor-900/50">{driverName ?? "Unassigned"}</p>
+          </div>
+          <div>
+            <p className="text-harbor-900/50 text-xs">Pickup</p>
+            <p>{booking.pickup_location}</p>
+          </div>
+          <div>
+            <p className="text-harbor-900/50 text-xs">Destination</p>
+            <p>{booking.destination}</p>
+          </div>
+          <div className="flex items-center justify-between sm:justify-start gap-3">
+            <StatusBadge status={booking.status} />
+            <button
+              onClick={() => setShowMap((v) => !v)}
+              className="text-xs font-medium text-lagoon-500 hover:text-lagoon-400 underline underline-offset-2"
+            >
+              {showMap ? "Hide route" : "View route"}
+            </button>
+          </div>
+        </div>
+      </div>
+      {showMap && (
+        <div className="mt-4">
+          <RideMap
+            pickup={pickupGeo.coords}
+            pickupLabel={booking.pickup_location}
+            destination={destinationGeo.coords}
+            destinationLabel={booking.destination}
+            className="h-48"
+          />
+        </div>
+      )}
     </div>
   );
 }
